@@ -1,0 +1,44 @@
+{
+  "ds": {
+    "title": "数据结构",
+    "desc": "线性表、树、图、查找与排序，408 分值约 45 分",
+    "color": "blue",
+    "sections": [
+      { "slug": "intro", "title": "复习总览与刷题方法", "file": "ds/intro.md", "minutes": 12 },
+      { "slug": "linear", "title": "线性表：数组、链表、栈、队列", "file": "ds/linear.md", "minutes": 25 },
+      { "slug": "tree", "title": "树与二叉树：遍历、线索、哈夫曼", "file": "ds/tree.md", "minutes": 30 },
+      { "slug": "graph", "title": "图：存储、遍历、最短路与生成树", "file": "ds/graph.md", "minutes": 28 },
+      { "slug": "sort", "title": "排序与查找：复杂度与稳定性", "file": "ds/sort.md", "minutes": 22 }
+    ]
+  },
+  "co": {
+    "title": "计算机组成原理",
+    "desc": "数据表示、存储层次、指令与流水线，分值约 45 分",
+    "color": "violet",
+    "sections": [
+      { "slug": "intro", "title": "计组复习总览：从指令到存储", "file": "co/intro.md", "minutes": 12 },
+      { "slug": "cache", "title": "Cache：命中率与地址映射", "file": "co/cache.md", "minutes": 26 },
+      { "slug": "instruction", "title": "指令系统与 CPU 流水线", "file": "co/instruction.md", "minutes": 30 }
+    ]
+  },
+  "os": {
+    "title": "操作系统",
+    "desc": "进程、内存、文件与 I/O，分值约 35 分",
+    "color": "green",
+    "sections": [
+      { "slug": "intro", "title": "OS 复习总览：进程/内存/文件", "file": "os/intro.md", "minutes": 12 },
+      { "slug": "process", "title": "进程与线程：调度、同步、死锁", "file": "os/process.md", "minutes": 28 },
+      { "slug": "memory", "title": "内存管理：分页、分段与虚拟存储", "file": "os/memory.md", "minutes": 26 }
+    ]
+  },
+  "cn": {
+    "title": "计算机网络",
+    "desc": "分层模型、TCP/IP 与 HTTP，分值约 25 分",
+    "color": "amber",
+    "sections": [
+      { "slug": "intro", "title": "计网复习总览：分层与常见协议", "file": "cn/intro.md", "minutes": 10 },
+      { "slug": "tcp", "title": "TCP：连接、可靠传输与拥塞控制", "file": "cn/tcp.md", "minutes": 24 },
+      { "slug": "http", "title": "HTTP、DNS 与 Web 请求全流程", "file": "cn/http.md", "minutes": 20 }
+    ]
+  }
+}
