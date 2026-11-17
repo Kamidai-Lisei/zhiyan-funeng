@@ -106,6 +106,8 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionMapper, Question>
                 queryWrapper.like("tags", "\"" + tag + "\"");
             }
         }
+        queryWrapper.eq(StringUtils.isNotBlank(questionQueryRequest.getCategory()),
+                "category", questionQueryRequest.getCategory());
         queryWrapper.eq(ObjectUtils.isNotEmpty(id), "id", id);
         queryWrapper.eq(ObjectUtils.isNotEmpty(userId), "userId", userId);
         queryWrapper.eq("isDelete", false);

@@ -11,4 +11,7 @@ export const resumeApi = {
   analysis: (id: number | string) => unwrap<any>(http.get('/resume/analysis', { params: { id } })),
 
   templates: () => unwrap<{ id: string; name: string; desc: string }[]>(http.get('/resume/templates')),
+
+  chat: (body: { resumeId: number | string; message: string; history?: { role: string; content: string }[] }) =>
+    unwrap<{ reply: string; resumeJson?: string; applied?: boolean }>(http.post('/resume/chat', body)),
 }

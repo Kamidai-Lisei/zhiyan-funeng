@@ -30,6 +30,21 @@ public class QuizQuestion implements Serializable {
      */
     private String source;
 
+    /**
+     * choice 选择题 / subjective 大题
+     */
+    private String type;
+
+    /**
+     * 年份，章节练习为 0
+     */
+    private Integer year;
+
+    /**
+     * 所属卷名
+     */
+    private String paper;
+
     private String question;
 
     /**
@@ -41,6 +56,11 @@ public class QuizQuestion implements Serializable {
      * 正确选项字母，如 A
      */
     private String answer;
+
+    /**
+     * 大题参考答案要点
+     */
+    private String answerLong;
 
     private String analysis;
 

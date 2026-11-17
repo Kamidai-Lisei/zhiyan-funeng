@@ -24,20 +24,53 @@ const categories = ref<{ name: string; count: number }[]>([])
 const favourIds = ref<(number | string)[]>([])
 const stats = ref<any>({})
 
-const cats = [
-  { id: '', label: '全部资料' },
-  { id: '408 真题', label: '408 历年真题' },
-  { id: '408 模拟题', label: '408 模拟题' },
-  { id: '408 习题', label: '408 经典练习题' },
-  { id: '408 大纲', label: '408 考研大纲' },
-  { id: '408', label: '408 专业课' },
-  { id: '方法论', label: '复习方法论' },
-  { id: '数学', label: '考研数学' },
-  { id: '英语', label: '考研英语' },
-  { id: '政治', label: '考研政治' },
-  { id: '复试', label: '复试面试' },
-  { id: '经验', label: '经验分享' },
+const catGroups = [
+  {
+    label: '408 专业课',
+    items: [
+      { id: '408 真题', label: '历年真题' },
+      { id: '408 模拟题', label: '模拟题' },
+      { id: '408 习题', label: '教材配套习题' },
+      { id: '408 大纲', label: '考试大纲' },
+      { id: '408', label: '讲义与笔记' },
+    ],
+  },
+  {
+    label: '公共课真题',
+    items: [
+      { id: '数学真题', label: '数学真题' },
+      { id: '英语真题', label: '英语真题' },
+      { id: '政治真题', label: '政治真题' },
+    ],
+  },
+  {
+    label: '公共课资料',
+    items: [
+      { id: '数学', label: '数学' },
+      { id: '英语', label: '英语' },
+      { id: '政治', label: '政治' },
+    ],
+  },
+  {
+    label: '更多',
+    items: [
+      { id: '复试', label: '复试面试' },
+      { id: '方法论', label: '复习方法论' },
+    ],
+  },
 ]
+const isRealPaper = computed(() => ['408 真题', '408 模拟题', '数学真题', '英语真题', '政治真题'].includes(category.value))
+const flatCats = catGroups.flatMap((g) => g.items)
+const years = computed(() => {
+  if (!isRealPaper.value) return []
+  if (category.value === '408 模拟题') return ['1', '2', '3', '4', '5', '6', '7', '8']
+  return Array.from({ length: 18 }, (_, i) => String(2026 - i))
+})
+const pickYear = (y: string) => {
+  keyword.value = y
+  current.value = 1
+  load()
+}
 const subjects = [
   { id: '', label: '全部科目' },
   { id: 'ds', label: '数据结构' },
@@ -161,16 +194,20 @@ const toggleFavour = async (m: any, e: Event) => {
 
 const download = async (m: any) => {
   try {
-    // 在线资源：直接跳转外部学习页面
-    if (m.fileType === 'link' && m.fileUrl) {
-      await materialApi.download(m.id).catch(() => {})
-      window.open(m.fileUrl, '_blank')
-      return
-    }
-    const res = await materialApi.download(m.id)
+    await materialApi.download(m.id).catch(() => {})
     m.downloadNum = (m.downloadNum || 0) + 1
-    if (res.url) window.open(res.url, '_blank')
-    else Message.info('该资料暂未上传文件')
+    if (m.fileUrl) {
+      // 同源文件：触发浏览器下载
+      const a = document.createElement('a')
+      a.href = m.fileUrl
+      a.download = `${m.title || '资料'}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      Message.success('已开始下载')
+    } else {
+      Message.info('该资料暂未上传文件')
+    }
   } catch (e: any) {
     Message.error(errorMessage(e))
   }
@@ -241,21 +278,36 @@ onMounted(() => { load(); loadMeta() })
         <aside class="card card-pad" style="position: sticky; top: 88px">
           <div class="h4" style="margin-bottom: 10px">资料分类</div>
           <div class="cat-list">
-            <div v-for="c in cats" :key="c.id" class="cat-item" :class="{ active: category === c.id }" @click="selectCat(c.id)">
-              <span>{{ c.label }}</span>
-              <span class="small muted">{{ c.id ? catCount(c.id) : '' }}</span>
+            <div class="cat-item" :class="{ active: category === '' }" @click="selectCat('')">
+              <span>全部资料</span>
             </div>
+            <template v-for="g in catGroups" :key="g.label">
+              <div class="cat-group-label">{{ g.label }}</div>
+              <div v-for="c in g.items" :key="c.id" class="cat-item" :class="{ active: category === c.id }" @click="selectCat(c.id)">
+                <span>{{ c.label }}</span>
+                <span class="small muted">{{ c.id ? catCount(c.id) : '' }}</span>
+              </div>
+            </template>
           </div>
-          <div class="divider" />
-          <div class="h4" style="margin-bottom: 10px">408 科目</div>
-          <div class="row wrap gap8">
-            <span v-for="s in subjects.slice(1)" :key="s.id" class="tag" :class="subject === s.id ? 'blue' : ''" style="cursor: pointer" @click="selectSubject(s.id)">{{ s.label }}</span>
-          </div>
+          <template v-if="isRealPaper">
+            <div class="divider" />
+            <div class="h4" style="margin-bottom: 10px">{{ category === '408 模拟题' ? '卷号' : '年份' }}</div>
+            <div class="year-grid">
+              <span v-for="y in years" :key="y" class="year-chip" :class="{ active: keyword === y }" @click="pickYear(y)">{{ y }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="divider" />
+            <div class="h4" style="margin-bottom: 10px">408 科目</div>
+            <div class="row wrap gap8">
+              <span v-for="s in subjects.slice(1)" :key="s.id" class="tag" :class="subject === s.id ? 'blue' : ''" style="cursor: pointer" @click="selectSubject(s.id)">{{ s.label }}</span>
+            </div>
+          </template>
           <div class="divider" />
           <div class="card" style="padding: 12px; background: #fdfaf4; border: none">
             <div class="small muted">资料总量</div>
             <div class="h2" style="margin: 2px 0">{{ total }}</div>
-            <div class="small muted">持续更新中</div>
+            <div class="small muted">全部支持在线浏览与下载</div>
           </div>
         </aside>
 
@@ -283,7 +335,7 @@ onMounted(() => { load(); loadMeta() })
           <div v-else-if="rows.length" class="grid g3">
             <div v-for="m in rows" :key="m.id" class="card card-hover card-pad" style="cursor: pointer" @click="openDetail(m)">
               <div class="row between">
-                <div class="file-badge pdf" :style="m.fileType === 'link' ? 'background:rgba(184,208,175,.35);color:#4e7a3f' : ''">{{ m.fileType === 'link' ? '在线' : (m.fileType || 'pdf').toUpperCase() }}</div>
+                <div class="file-badge pdf" style="background:rgba(184,208,175,.35);color:#4e7a3f">PDF</div>
                 <button class="icon-btn" style="width: 30px; height: 30px" @click="toggleFavour(m, $event)">
                   <Icon name="star" :size="14" :style="{ color: favourIds.map(String).includes(String(m.id)) ? 'var(--wheat-deep)' : 'var(--muted-2)' }" />
                 </button>
@@ -300,7 +352,7 @@ onMounted(() => { load(); loadMeta() })
               </div>
               <div class="row between small muted" style="margin-top: 12px">
                 <span>{{ m.downloadNum || 0 }} 次下载 · {{ formatSize(m.fileSize) }}</span>
-                <span class="row gap8"><Icon name="download" :size="14" /> 预览</span>
+                <span class="row gap8"><Icon name="eye" :size="14" /> 在线浏览</span>
               </div>
             </div>
           </div>
@@ -314,7 +366,7 @@ onMounted(() => { load(); loadMeta() })
       </div>
     </div>
 
-    <a-modal v-model:visible="previewOpen" :width="900" :footer="false" title="资料预览">
+    <a-modal v-model:visible="previewOpen" :width="1020" :footer="false" title="资料在线浏览">
       <div v-if="active">
         <div class="row between wrap gap12" style="margin-bottom: 12px">
           <div>
@@ -325,20 +377,13 @@ onMounted(() => { load(); loadMeta() })
             <a-button size="small" @click="toggleFavour(active, $event)">
               <Icon name="star" :size="14" /> {{ favourIds.map(String).includes(String(active.id)) ? '已收藏' : '收藏' }}
             </a-button>
-            <a-button type="primary" size="small" @click="download(active)">
-              <Icon :name="active.fileType === 'link' ? 'link' : 'download'" :size="14" /> {{ active.fileType === 'link' ? '前往学习' : '下载' }}
+            <a-button v-if="active.fileUrl" type="primary" size="small" @click="download(active)">
+              <Icon name="download" :size="14" /> 下载 PDF
             </a-button>
           </div>
         </div>
         <div class="small muted" style="margin-bottom: 10px">{{ active.description }}</div>
-        <iframe v-if="active.fileUrl && active.fileType !== 'link'" class="pdf-frame" :src="active.fileUrl" title="PDF 预览" />
-        <div v-else-if="active.fileType === 'link'" class="link-card" @click="download(active)">
-          <Icon name="link" :size="18" />
-          <div>
-            <div class="h4">在线资源 · 点击前往学习</div>
-            <div class="small muted" style="margin-top: 2px">{{ active.fileUrl }}</div>
-          </div>
-        </div>
+        <iframe v-if="active.fileUrl && active.fileType !== 'link'" class="pdf-frame" :src="active.fileUrl" title="PDF 在线浏览" />
         <div v-else class="empty small">该资料暂未上传文件，可先收藏，上传后第一时间查看。</div>
       </div>
     </a-modal>
@@ -360,7 +405,7 @@ onMounted(() => { load(); loadMeta() })
           <div>
             <div class="small muted" style="margin-bottom: 5px">分类</div>
             <a-select v-model="form.category" style="width: 100%">
-              <a-option v-for="c in cats.slice(1)" :key="c.id" :value="c.id">{{ c.label }}</a-option>
+              <a-option v-for="c in flatCats" :key="c.id" :value="c.id">{{ c.label }}</a-option>
             </a-select>
           </div>
         </div>
@@ -379,8 +424,14 @@ onMounted(() => { load(); loadMeta() })
 </template>
 
 <style scoped>
-.link-card { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-radius: 12px; background: #f4f7ee; border: 1px solid rgba(184, 208, 175, 0.5); color: #4e7a3f; cursor: pointer; transition: 0.16s; }
-.link-card:hover { background: #eef4e6; transform: translateY(-1px); }
+.cat-group-label { font-size: 11.5px; font-weight: 700; color: var(--muted-2, #999); padding: 10px 10px 4px; letter-spacing: 1px; }
+.year-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.year-chip {
+  text-align: center; font-size: 12px; padding: 5px 0; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line, #e5e0d4); color: var(--ink-2, #555); transition: 0.12s;
+}
+.year-chip:hover { border-color: var(--brand); color: var(--brand); }
+.year-chip.active { background: var(--brand-soft, rgba(90,143,90,.12)); color: var(--brand, #3d6b3d); font-weight: 600; border-color: var(--brand); }
 .fit-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .fit-bar { flex: 1; height: 7px; border-radius: 999px; background: rgba(139, 115, 85, 0.12); overflow: hidden; }
 .fit-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #c9a227, var(--meadow)); }

@@ -20,8 +20,16 @@ const pageSize = ref(10)
 const keyword = ref('')
 const subject = ref('')
 const difficulty = ref('')
+const category = ref('')
 const favourIds = ref<(number | string)[]>([])
 const solvedIds = ref<string[]>([])
+
+const categories = [
+  { id: '', label: '全部题目', desc: '查看所有编程题' },
+  { id: 'algo', label: '算法竞赛真题', desc: 'ACM / 蓝桥杯风格竞赛真题' },
+  { id: 'machine', label: '考研上机真题', desc: '408 各科上机实现题' },
+  { id: 'interview', label: '面试真题', desc: '大厂手撕高频题' },
+]
 
 const subjects = ['数据结构', '计算机组成原理', '操作系统', '计算机网络', '算法', '字符串']
 const levels = ['简单', '中等', '困难']
@@ -35,6 +43,7 @@ const load = async () => {
       pageSize: pageSize.value,
       title: keyword.value || undefined,
       tags: tags.length ? tags : undefined,
+      category: category.value || undefined,
       sortField: 'createTime',
       sortOrder: 'desc',
     })
@@ -55,6 +64,12 @@ const pickSubject = (s: string) => {
 
 const pickLevel = (s: string) => {
   difficulty.value = difficulty.value === s ? '' : s
+  current.value = 1
+  load()
+}
+
+const pickCategory = (c: string) => {
+  category.value = c
   current.value = 1
   load()
 }
@@ -103,6 +118,18 @@ onMounted(async () => {
       </div>
 
       <div class="card card-pad" style="margin-bottom: 16px">
+        <div class="cat-tabs row wrap gap8" style="margin-bottom: 14px">
+          <button
+            v-for="c in categories"
+            :key="c.id"
+            class="cat-tab"
+            :class="{ active: category === c.id }"
+            @click="pickCategory(c.id)"
+          >
+            <span class="cat-label">{{ c.label }}</span>
+            <span class="cat-desc">{{ c.desc }}</span>
+          </button>
+        </div>
         <div class="row between wrap gap16">
           <div class="row wrap gap8">
             <span class="chip" :class="{ active: !subject && !difficulty }" @click="subject = ''; difficulty = ''; current = 1; load()">全部</span>
@@ -171,6 +198,18 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.cat-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
+.cat-tab {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 16px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--paper, #fff); cursor: pointer; transition: all 0.15s;
+  min-width: 150px; text-align: left;
+}
+.cat-tab:hover { border-color: var(--brand); }
+.cat-tab.active { border-color: var(--brand); background: rgba(90, 143, 90, 0.08); }
+.cat-label { font-size: 14px; font-weight: 600; color: var(--ink, #2c2c2c); }
+.cat-tab.active .cat-label { color: var(--brand, #3d6b3d); }
+.cat-desc { font-size: 12px; color: var(--muted-2, #888); }
 .q-dot { width: 8px; height: 8px; border-radius: 50%; }
 .q-dot.easy { background: var(--meadow); box-shadow: 0 0 0 4px rgba(90, 143, 90, 0.1); }
 .q-dot.mid { background: var(--wheat-deep); box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.1); }

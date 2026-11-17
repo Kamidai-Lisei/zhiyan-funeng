@@ -745,17 +745,19 @@ img { max-width: 100%; }
 .heat-cell.l3 { background: #86b083; }
 .heat-cell.l4 { background: var(--meadow-deep); }
 
-/* ============ 做题 ============ */
-.problem-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+/* ============ 做题（左右对称大屏） ============ */
+.problem-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: stretch; }
 .problem-pane {
   background: var(--cloth-2);
   border: 1px solid rgba(90, 143, 90, 0.14);
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow-paper);
+  display: flex;
+  flex-direction: column;
 }
 .problem-pane-head {
-  padding: 16px 22px;
+  padding: 18px 24px;
   border-bottom: 2px dashed rgba(139, 115, 85, 0.18);
   display: flex;
   justify-content: space-between;
@@ -763,8 +765,8 @@ img { max-width: 100%; }
   gap: 12px;
   background: rgba(244, 238, 226, 0.5);
 }
-.problem-scroll { padding: 26px; max-height: calc(100vh - 380px); overflow-y: auto; }
-.editor-wrap { height: calc(100vh - 380px); min-height: 320px; }
+.problem-scroll { padding: 24px 28px; max-height: calc(100vh - 210px); overflow-y: auto; flex: 1; font-size: 15px; line-height: 1.85; }
+.editor-wrap { height: calc(100vh - 210px); min-height: 480px; flex: 1; }
 .editor-toolbar {
   display: flex;
   gap: 8px;
@@ -1135,7 +1137,7 @@ img { max-width: 100%; }
   .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .problem-layout { grid-template-columns: 1fr; }
   .problem-scroll { max-height: none; }
-  .editor-wrap { height: 420px; }
+  .editor-wrap { height: 520px; }
   .resume-grid { grid-template-columns: 1fr; }
   .section { margin-top: 48px; }
 }

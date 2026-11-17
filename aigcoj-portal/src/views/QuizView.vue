@@ -1,50 +1,53 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { quizApi, type QuizQuestion, type QuizResultItem } from '@/api/quiz'
+import { quizApi, type QuizQuestion, type QuizPaper, type SingleResult } from '@/api/quiz'
 import { errorMessage } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import Icon from '@/components/Icon.vue'
-import Floral from '@/components/Floral.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
-const router = useRouter()
 const auth = useAuthStore()
 
 const SUBJECTS = [
-  { id: '', label: '全部' },
+  { id: '', label: '全部科目' },
   { id: 'ds', label: '数据结构' },
-  { id: 'co', label: '组成原理' },
+  { id: 'co', label: '计组' },
   { id: 'os', label: '操作系统' },
-  { id: 'cn', label: '计算机网络' },
+  { id: 'cn', label: '计网' },
 ]
-const subjectName = (id: string) => SUBJECTS.find((s) => s.id === id)?.label || id
+const SUBJECT_LABEL: Record<string, string> = { ds: '数据结构', co: '计算机组成原理', os: '操作系统', cn: '计算机网络' }
 
-const loading = ref(true)
-const questions = ref<QuizQuestion[]>([])
+const mode = ref<'pick' | 'practice' | 'exam'>('pick')
+const papers = ref<QuizPaper[]>([])
+const selectedPaper = ref<QuizPaper | null>(null)
 const subject = ref('')
-const source = ref('')
-const sources = ref<string[]>([])
-const chosen = ref<Record<number, string>>({})
-const submitting = ref(false)
-const resultMap = ref<Record<number, QuizResultItem>>({})
-const score = ref<number | null>(null)
-const stats = ref<{ subject: string; total: number; correct: number; accuracy: number }[]>([])
+const loading = ref(false)
 
-const answeredCount = computed(() => Object.keys(chosen.value).length)
-const submitted = computed(() => Object.keys(resultMap.value).length > 0)
+const questions = ref<QuizQuestion[]>([])
+const idx = ref(0)
+const answers = ref<Record<number, string>>({})          // 选择题所选字母
+const textAnswers = ref<Record<number, string>>({})      // 大题作答文本
+const results = ref<Record<number, SingleResult>>({})    // 已判结果
+const judging = ref(false)
+const examLeft = ref(0)                                   // 模拟考试剩余秒
+const examReport = ref<{ correct: number; total: number; score: number } | null>(null)
+let timer: ReturnType<typeof setInterval> | null = null
 
-async function load() {
+const stats = ref<{ answered: number; bySubject: { subject: string; total: number; correct: number; accuracy: number }[] } | null>(null)
+
+const cur = computed(() => questions.value[idx.value] || null)
+const curResult = computed(() => (cur.value ? results.value[cur.value.id] : null))
+const progress = computed(() => {
+  if (!questions.value.length) return 0
+  const done = questions.value.filter((q) => results.value[q.id] || answers.value[q.id] || textAnswers.value[q.id]).length
+  return Math.round((done / questions.value.length) * 100)
+})
+
+const loadPapers = async () => {
   loading.value = true
   try {
-    questions.value = await quizApi.questions({
-      subject: subject.value || undefined,
-      source: source.value || undefined,
-    })
-    chosen.value = {}
-    resultMap.value = {}
-    score.value = null
+    papers.value = await quizApi.papers()
   } catch (e: any) {
     Message.error(errorMessage(e))
   } finally {
@@ -52,216 +55,377 @@ async function load() {
   }
 }
 
-function pick(q: QuizQuestion, opt: string) {
-  if (submitted.value) return
-  const letter = opt.slice(0, 1)
-  chosen.value = { ...chosen.value, [q.id]: letter }
+const loadStats = async () => {
+  if (!auth.isAuthed) return
+  try {
+    stats.value = await quizApi.stats()
+  } catch {}
 }
 
-async function submit() {
-  if (!auth.isAuthed) {
-    Message.info('登录后才能提交判分')
-    router.push({ path: '/login', query: { redirect: '/learn/quiz' } })
-    return
-  }
-  const answers = Object.entries(chosen.value).map(([questionId, ch]) => ({ questionId: Number(questionId), chosen: ch }))
-  if (!answers.length) return Message.warning('先选几道题再提交')
-  submitting.value = true
+const realPapers = computed(() => papers.value.filter((p) => p.kind === '真题'))
+const mockPapers = computed(() => papers.value.filter((p) => p.kind === '模拟'))
+const chapterPapers = computed(() => papers.value.filter((p) => p.kind === '章节'))
+
+const openPaper = async (p: QuizPaper, asExam: boolean) => {
+  loading.value = true
+  selectedPaper.value = p
   try {
-    const r = await quizApi.submit(answers)
-    score.value = r.score
-    const map: Record<number, QuizResultItem> = {}
-    r.results.forEach((i) => (map[i.questionId] = i))
-    resultMap.value = map
-    Message.success(`判分完成：${r.correct}/${r.total}，得分 ${r.score}`)
-    loadStats()
+    questions.value = await quizApi.questions({ paper: p.name, subject: p.kind === '章节' && subject.value ? subject.value : undefined })
+    if (!questions.value.length) {
+      Message.warning('该卷暂无题目，换个筛选试试')
+      loading.value = false
+      return
+    }
+    idx.value = 0
+    answers.value = {}
+    textAnswers.value = {}
+    results.value = {}
+    examReport.value = null
+    mode.value = asExam ? 'exam' : 'practice'
+    if (asExam) startTimer()
   } catch (e: any) {
     Message.error(errorMessage(e))
   } finally {
-    submitting.value = false
+    loading.value = false
   }
 }
 
-function retry() {
-  chosen.value = {}
-  resultMap.value = {}
-  score.value = null
+const startTimer = () => {
+  stopTimer()
+  examLeft.value = 180 * 60
+  timer = setInterval(() => {
+    examLeft.value--
+    if (examLeft.value <= 0) {
+      stopTimer()
+      Message.warning('时间到，自动交卷')
+      submitExam()
+    }
+  }, 1000)
+}
+const stopTimer = () => {
+  if (timer) clearInterval(timer)
+  timer = null
+}
+const fmtTime = (s: number) => {
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
-function optClass(q: QuizQuestion, opt: string) {
-  const letter = opt.slice(0, 1)
-  const r = resultMap.value[q.id]
-  if (r) {
-    if (letter === r.answer) return 'right'
-    if (letter === r.chosen && !r.correct) return 'wrong'
-    return ''
+/** 练习模式：单题提交判分（大题走 AI 评阅） */
+const submitOne = async () => {
+  const q = cur.value
+  if (!q) return
+  if (!auth.isAuthed) return Message.info('登录后可作答并保存记录')
+  if (q.type === 'choice' && !answers.value[q.id]) return Message.warning('请先选择答案')
+  if (q.type === 'subjective' && !textAnswers.value[q.id]?.trim()) return Message.warning('请先作答')
+  judging.value = true
+  try {
+    const res = await quizApi.single({
+      questionId: q.id,
+      chosen: q.type === 'choice' ? answers.value[q.id] : undefined,
+      answerText: q.type === 'subjective' ? textAnswers.value[q.id] : undefined,
+    })
+    results.value = { ...results.value, [q.id]: res }
+  } catch (e: any) {
+    Message.error(errorMessage(e))
+  } finally {
+    judging.value = false
   }
-  return chosen.value[q.id] === letter ? 'picked' : ''
 }
 
-async function loadStats() {
-  if (!auth.isAuthed) return
+const submitExam = async () => {
+  stopTimer()
+  if (!auth.isAuthed) return Message.info('登录后可提交试卷')
+  const choiceQs = questions.value.filter((q) => q.type === 'choice')
+  const filled = choiceQs.filter((q) => answers.value[q.id]).length
+  if (!filled) return Message.warning('还没有作答任何选择题')
   try {
-    const r = await quizApi.stats()
-    stats.value = r.bySubject
-  } catch {}
+    const res = await quizApi.submit(choiceQs.filter((q) => answers.value[q.id]).map((q) => ({ questionId: q.id, chosen: answers.value[q.id] })))
+    examReport.value = { correct: res.correct, total: res.total, score: res.score }
+    // 把选择题结果写进 results 供逐题回看
+    for (const r of res.results) {
+      results.value = { ...results.value, [r.questionId]: { questionId: r.questionId, type: 'choice', answer: r.answer, analysis: r.analysis, correct: r.correct } }
+    }
+    Message.success(`交卷成功：选择题正确 ${res.correct}/${res.total}`)
+  } catch (e: any) {
+    Message.error(errorMessage(e))
+  }
 }
 
-onMounted(async () => {
-  try {
-    const meta = await quizApi.meta()
-    sources.value = Array.from(meta.sources || [])
-  } catch {}
-  await load()
+const backToPick = () => {
+  stopTimer()
+  mode.value = 'pick'
+  selectedPaper.value = null
+  examReport.value = null
+  loadStats()
+}
+
+const go = (i: number) => {
+  if (i >= 0 && i < questions.value.length) idx.value = i
+}
+
+onMounted(() => {
+  loadPapers()
   loadStats()
 })
+onUnmounted(stopTimer)
 </script>
 
 <template>
   <div class="page">
-    <div class="container">
-      <section class="fade-up">
-        <div class="kicker">408 Quiz</div>
-        <div class="h1" style="margin-top: 8px">在线习题与真题</div>
-        <p class="muted" style="margin-top: 6px; max-width: 620px">
-          四本教材的章节练习 + 往年真题改编，在线作答、即时判分、逐题解析 ——
-          作答数据会汇入你的个人画像，成为薄弱点诊断的依据。
-        </p>
-      </section>
-
-      <!-- 筛选 -->
-      <div class="card card-pad fade-up delay-1" style="margin: 22px 0 18px">
-        <div class="row between wrap gap12">
-          <div class="row wrap gap8">
-            <span v-for="s in SUBJECTS" :key="s.id" class="chip" :class="{ active: subject === s.id }"
-              @click="subject = s.id; load()">{{ s.label }}</span>
-          </div>
-          <div class="row wrap gap8">
-            <span class="small muted">来源</span>
-            <span class="chip" :class="{ active: source === '' }" @click="source = ''; load()">全部</span>
-            <span v-for="s in sources" :key="s" class="chip" :class="{ active: source === s }" @click="source = s; load()">{{ s }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="quiz-grid">
-        <!-- 题目区 -->
-        <div>
-          <div v-if="score !== null" class="card card-pad score-card">
-            <Floral class="sprig tr" variant="flower" :size="44" color="#5a8f5a" />
-            <div class="score-num" :class="score >= 60 ? 'pass' : 'fail'">{{ score }}<small>分</small></div>
-            <div class="muted small" style="margin-top: 4px">
-              本次判分 {{ Object.keys(resultMap).filter((k) => resultMap[Number(k)].correct).length }}/{{ Object.keys(resultMap).length }} 题正确
-            </div>
-            <div class="row gap8" style="margin-top: 14px; justify-content: center">
-              <a-button size="small" @click="retry">重新作答</a-button>
-              <a-button size="small" type="primary" @click="router.push('/portrait')">看看画像变化</a-button>
-            </div>
-          </div>
-
-          <div v-if="loading" class="card card-pad"><div v-for="i in 4" :key="i" class="skeleton" style="height: 90px; margin-bottom: 12px" /></div>
-          <template v-else-if="questions.length">
-            <div v-for="(q, idx) in questions" :key="q.id" class="card card-pad quiz-card">
-              <div class="row between wrap gap8">
-                <div class="row gap8">
-                  <span class="quiz-no">{{ idx + 1 }}</span>
-                  <span class="tag">{{ subjectName(q.subject) }}</span>
-                  <span class="tag violet">{{ q.chapter }}</span>
-                </div>
-                <span class="tag" :class="q.source.includes('真题') ? 'amber' : ''">{{ q.source }}</span>
-              </div>
-              <div class="quiz-stem">{{ q.question }}</div>
-              <div class="quiz-options">
-                <button v-for="opt in q.options" :key="opt" class="quiz-opt" :class="optClass(q, opt)" @click="pick(q, opt)">
-                  {{ opt }}
-                  <Icon v-if="resultMap[q.id] && opt.slice(0, 1) === resultMap[q.id].answer" name="check" :size="14" />
-                </button>
-              </div>
-              <div v-if="resultMap[q.id]" class="quiz-analysis">
-                <b :style="{ color: resultMap[q.id].correct ? 'var(--meadow-dark)' : '#8e4f4f' }">
-                  {{ resultMap[q.id].correct ? '回答正确' : `回答错误，正确答案 ${resultMap[q.id].answer}` }}
-                </b>
-                <p>{{ resultMap[q.id].analysis }}</p>
-              </div>
-            </div>
-
-            <div class="card card-pad submit-bar">
-              <span class="muted small">已作答 {{ answeredCount }} / {{ questions.length }} 题</span>
-              <a-button v-if="!submitted" type="primary" :loading="submitting" @click="submit">
-                <Icon name="check-circle" :size="15" /> 提交判分
-              </a-button>
-              <a-button v-else @click="retry">再做一遍</a-button>
-            </div>
-          </template>
-          <EmptyState v-else title="这个分类下还没有题" desc="换个科目或来源试试" icon="book" />
-        </div>
-
-        <!-- 侧栏：我的正确率 -->
-        <aside>
-          <div class="card card-pad" style="position: sticky; top: 88px">
-            <div class="h4" style="margin-bottom: 10px">我的习题正确率</div>
-            <template v-if="auth.isAuthed">
-              <template v-if="stats.length">
-                <div v-for="s in stats" :key="s.subject" class="side-stat">
-                  <span>{{ subjectName(s.subject) }}</span>
-                  <div class="side-bar"><i :style="{ width: s.accuracy + '%' }" /></div>
-                  <b>{{ s.accuracy }}%</b>
-                </div>
-              </template>
-              <p v-else class="muted small" style="line-height: 1.9">还没有作答记录。选一组题提交一次，这里就会出现你的四科正确率。</p>
-            </template>
-            <p v-else class="muted small" style="line-height: 1.9">登录后自动统计你的作答正确率，并汇入个人画像。</p>
-            <div class="divider" />
-            <p class="muted small" style="line-height: 1.9">
-              错题会留在画像里，决策推演与资源推荐都会参考这些数据。
+    <div class="container quiz-page">
+      <!-- 选择卷子 -->
+      <template v-if="mode === 'pick'">
+        <div class="row between wrap gap16" style="margin-bottom: 18px">
+          <div>
+            <div class="kicker">408 Practice</div>
+            <h1 class="h1" style="margin-top: 6px">408 在线刷题</h1>
+            <p class="muted" style="margin-top: 6px">
+              历年真题 · 全真模拟 · 章节精练：逐题作答即时判分，大题由 AI 逐句评阅；支持 180 分钟整卷限时模拟。
             </p>
           </div>
-        </aside>
-      </div>
+          <div class="card card-pad" v-if="stats" style="min-width: 240px">
+            <div class="small muted">我的刷题记录</div>
+            <div class="h2" style="margin: 4px 0">{{ stats.answered }} 题次</div>
+            <div class="row wrap gap8">
+              <span v-for="s in stats.bySubject" :key="s.subject" class="tag">
+                {{ SUBJECT_LABEL[s.subject] || s.subject }} {{ s.accuracy }}%
+              </span>
+            </div>
+          </div>
+        </div>
 
-      <hr class="stitched" />
+        <div class="qz-group" v-for="(group, gi) in [
+            { title: '历年真题卷', icon: 'file', list: realPapers, tint: 'green' },
+            { title: '全真模拟卷', icon: 'sparkles', list: mockPapers, tint: 'amber' },
+            { title: '章节精练', icon: 'book', list: chapterPapers, tint: 'blue' },
+          ]" :key="gi">
+          <div class="qz-group-head">
+            <Icon :name="group.icon" :size="17" />
+            <span class="h3">{{ group.title }}</span>
+          </div>
+          <div v-if="group.title === '章节精练'" class="row gap8" style="margin: 8px 0 4px">
+            <span v-for="s in SUBJECTS" :key="s.id" class="chip" :class="{ active: subject === s.id }" @click="subject = s.id">
+              {{ s.label }}
+            </span>
+          </div>
+          <div class="qz-papers">
+            <button v-for="p in group.list" :key="p.name" class="qz-paper-card" @click="openPaper(p, false)">
+              <div class="qz-paper-name">{{ p.name }}</div>
+              <div class="small muted" style="margin-top: 4px">
+                选择题 {{ p.choice }} · 大题 {{ p.subjective }} · 共 {{ p.total }} 题
+              </div>
+              <div class="row gap8" style="margin-top: 10px">
+                <span class="qz-mode-btn" @click.stop="openPaper(p, false)"><Icon name="edit" :size="13" /> 逐题练习</span>
+                <span v-if="p.kind !== '章节'" class="qz-mode-btn exam" @click.stop="openPaper(p, true)">
+                  <Icon name="clock" :size="13" /> 整卷模拟
+                </span>
+              </div>
+            </button>
+            <EmptyState v-if="!group.list.length && !loading" title="暂无试卷" icon="book" />
+          </div>
+        </div>
+      </template>
+
+      <!-- 练习 / 考试模式 -->
+      <template v-else>
+        <div class="row between wrap gap12" style="margin-bottom: 14px">
+          <div class="row gap12">
+            <button class="btn-ghost" @click="backToPick"><Icon name="arrow-left" :size="15" /> 返回选卷</button>
+            <span class="h3">{{ selectedPaper?.name }}</span>
+            <span class="tag">{{ mode === 'exam' ? '整卷模拟' : '逐题练习' }}</span>
+          </div>
+          <div class="row gap8">
+            <span v-if="mode === 'exam'" class="qz-timer" :class="{ urgent: examLeft < 300 }">
+              <Icon name="clock" :size="14" /> {{ fmtTime(examLeft) }}
+            </span>
+            <span class="small muted">{{ progress }}% 已作答</span>
+            <a-button v-if="mode === 'exam'" type="primary" size="small" @click="submitExam">交卷</a-button>
+          </div>
+        </div>
+
+        <div class="problem-layout">
+          <!-- 左：题目 -->
+          <div class="problem-pane">
+            <div class="problem-pane-head">
+              <div class="row gap8">
+                <span class="h3">第 {{ idx + 1 }} / {{ questions.length }} 题</span>
+                <span class="tag">{{ SUBJECT_LABEL[cur?.subject || ''] || cur?.subject }}</span>
+                <span class="tag" :class="cur?.type === 'subjective' ? 'blue' : 'green'">
+                  {{ cur?.type === 'subjective' ? '综合应用题' : '单项选择题' }}
+                </span>
+                <span v-if="cur?.chapter" class="small muted">{{ cur.chapter }}</span>
+              </div>
+            </div>
+            <div class="problem-scroll">
+              <template v-if="cur">
+                <div class="qz-stem">{{ cur.question }}</div>
+                <div v-if="cur.type === 'choice'" class="qz-options">
+                  <label
+                    v-for="o in cur.options"
+                    :key="o"
+                    class="qz-option"
+                    :class="{
+                      picked: answers[cur.id] === o[0],
+                      right: curResult?.type === 'choice' && curResult?.answer === o[0],
+                      wrong: curResult?.type === 'choice' && answers[cur.id] === o[0] && !curResult?.correct,
+                    }"
+                  >
+                    <input type="radio" :name="'q' + cur.id" :value="o[0]" v-model="answers[cur.id]" :disabled="!!curResult" />
+                    <span>{{ o }}</span>
+                  </label>
+                </div>
+                <div v-else class="qz-subjective">
+                  <a-textarea
+                    v-model="textAnswers[cur.id]"
+                    placeholder="写下你的解题思路、步骤与结论（AI 将对照参考答案逐点评阅）…"
+                    :auto-size="{ minRows: 8, maxRows: 16 }"
+                    :disabled="!!curResult"
+                  />
+                </div>
+
+                <!-- 判分结果 -->
+                <div v-if="curResult" class="qz-verdict" :class="curResult.correct === true ? 'ok' : curResult.aiReviewed ? 'ai' : 'bad'">
+                  <template v-if="curResult.aiReviewed">
+                    <div class="qz-verdict-title"><Icon name="sparkles" :size="15" /> AI 评阅结果</div>
+                    <pre class="qz-verdict-text">{{ curResult.aiComment }}</pre>
+                  </template>
+                  <template v-else>
+                    <div class="qz-verdict-title" :class="curResult.correct ? 'ok' : 'bad'">
+                      {{ curResult.correct ? '✓ 回答正确' : `× 回答错误，正确答案是 ${curResult.answer}` }}
+                    </div>
+                  </template>
+                  <div v-if="curResult.analysis" class="qz-analysis">
+                    <div class="qz-analysis-head"><Icon name="book" :size="14" /> 详细解析</div>
+                    <div class="qz-analysis-body">{{ curResult.analysis }}</div>
+                  </div>
+                  <div v-if="curResult.answerLong" class="qz-analysis">
+                    <div class="qz-analysis-head"><Icon name="file" :size="14" /> 参考答案要点</div>
+                    <div class="qz-analysis-body">{{ curResult.answerLong }}</div>
+                  </div>
+                </div>
+
+                <div class="row between" style="margin-top: 18px">
+                  <a-button :disabled="idx === 0" @click="go(idx - 1)"><Icon name="arrow-left" :size="14" /> 上一题</a-button>
+                  <div class="row gap8">
+                    <a-button v-if="!curResult" type="primary" :loading="judging" @click="submitOne">
+                      <Icon name="check" :size="14" />
+                      {{ cur.type === 'subjective' ? '提交给 AI 评阅' : '提交本题' }}
+                    </a-button>
+                    <a-button v-if="idx < questions.length - 1" type="outline" @click="go(idx + 1)">下一题 <Icon name="arrow-right" :size="14" /></a-button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- 右：答题卡 -->
+          <div class="problem-pane" style="max-width: 330px">
+            <div class="problem-pane-head"><span class="h4">答题卡</span></div>
+            <div style="padding: 16px; overflow-y: auto; flex: 1">
+              <div class="qz-grid">
+                <button
+                  v-for="(q, i) in questions"
+                  :key="q.id"
+                  class="qz-cell"
+                  :class="{
+                    cur: i === idx,
+                    done: !!results[q.id] || (q.type === 'choice' && answers[q.id]) || (q.type === 'subjective' && textAnswers[q.id]),
+                    right: results[q.id]?.correct === true,
+                    wrong: results[q.id] && results[q.id].correct === false && !results[q.id].aiReviewed,
+                    subj: q.type === 'subjective',
+                  }"
+                  @click="go(i)"
+                >
+                  {{ i + 1 }}
+                </button>
+              </div>
+              <div class="small muted" style="margin-top: 12px; line-height: 2">
+                <span class="qz-legend ok" /> 回答正确
+                <span class="qz-legend bad" /> 回答错误
+                <span class="qz-legend subj" /> 大题（AI 评阅）
+                <span class="qz-legend done" /> 已作答
+              </div>
+
+              <!-- 模拟考试报告 -->
+              <div v-if="examReport" class="qz-report">
+                <div class="h3">交卷报告</div>
+                <div class="qz-report-score">{{ examReport.score }}<span>分</span></div>
+                <div class="small muted">选择题正确 {{ examReport.correct }} / {{ examReport.total }}</div>
+                <div class="small" style="margin-top: 8px">
+                  大题可在逐题练习模式中提交给 AI 评阅，或查看左侧解析。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <style scoped>
-.quiz-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; align-items: start; }
-.score-card { text-align: center; position: relative; margin-bottom: 18px; }
-.score-num { font-size: 44px; font-weight: 600; }
-.score-num small { font-size: 16px; margin-left: 2px; }
-.score-num.pass { color: var(--meadow-dark); }
-.score-num.fail { color: #8e4f4f; }
-.quiz-card { margin-bottom: 16px; }
-.quiz-no {
-  width: 26px; height: 26px; border-radius: 8px; background: var(--brand-soft); color: var(--meadow-deep);
-  display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
+.quiz-page { max-width: 1280px; }
+.qz-group { margin-bottom: 22px; }
+.qz-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--brand, #3d6b3d); }
+.qz-papers { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.qz-paper-card {
+  text-align: left; padding: 14px 16px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--line, #e5e0d4); background: var(--cloth-2, #fffdf8); transition: all 0.15s;
 }
-.quiz-stem { margin: 14px 0 12px; font-size: 15px; line-height: 1.9; color: var(--ink); }
-.quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.quiz-opt {
-  text-align: left; padding: 10px 14px; border-radius: 14px; font-size: 14px; cursor: pointer;
-  border: 1.5px solid rgba(139, 115, 85, 0.2); background: #fffdf8; color: var(--ink-2);
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  transition: border-color 0.3s, background 0.3s, transform 0.3s;
+.qz-paper-card:hover { border-color: var(--brand, #3d6b3d); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(61, 107, 61, 0.12); }
+.qz-paper-name { font-weight: 700; font-size: 14.5px; color: var(--ink, #2c2c2c); }
+.qz-mode-btn {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
+  padding: 4px 10px; border-radius: 99px; background: rgba(90, 143, 90, 0.12); color: #3d6b3d;
 }
-.quiz-opt:hover { border-color: rgba(90, 143, 90, 0.45); transform: translateY(-1px); }
-.quiz-opt.picked { border-color: var(--meadow); background: var(--brand-soft); color: var(--meadow-deep); font-weight: 500; }
-.quiz-opt.right { border-color: var(--meadow); background: rgba(90, 143, 90, 0.12); color: var(--meadow-dark); font-weight: 600; }
-.quiz-opt.wrong { border-color: #b06b6b; background: rgba(212, 160, 160, 0.16); color: #8e4f4f; }
-.quiz-analysis {
-  margin-top: 14px; padding: 12px 16px; border-radius: 12px; background: #fdfaf4;
-  border: 1px dashed rgba(139, 115, 85, 0.22); font-size: 13.5px;
+.qz-mode-btn.exam { background: rgba(201, 162, 39, 0.14); color: #8a6d1a; }
+.qz-stem { font-size: 15.5px; line-height: 1.9; color: var(--ink, #2c2c2c); margin-bottom: 14px; white-space: pre-wrap; }
+.qz-options { display: flex; flex-direction: column; gap: 8px; }
+.qz-option {
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px;
+  border: 1.5px solid var(--line, #e5e0d4); cursor: pointer; transition: all 0.12s; font-size: 14.5px; line-height: 1.7;
 }
-.quiz-analysis p { margin-top: 4px; color: var(--ink-2); line-height: 1.8; }
-.submit-bar { display: flex; align-items: center; justify-content: space-between; }
-.side-stat { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--ink-2); }
-.side-stat span { width: 62px; flex: none; }
-.side-stat b { width: 40px; text-align: right; flex: none; }
-.side-bar { flex: 1; height: 8px; border-radius: 999px; background: rgba(139, 115, 85, 0.12); overflow: hidden; }
-.side-bar i { display: block; height: 100%; border-radius: 999px; background: var(--meadow); }
-@media (max-width: 900px) {
-  .quiz-grid { grid-template-columns: 1fr; }
-  .quiz-options { grid-template-columns: 1fr; }
+.qz-option:hover { border-color: var(--brand, #3d6b3d); }
+.qz-option.picked { border-color: #3d6b3d; background: rgba(90, 143, 90, 0.07); }
+.qz-option.right { border-color: #4a9a4a; background: rgba(74, 154, 74, 0.1); }
+.qz-option.wrong { border-color: #c25b5b; background: rgba(194, 91, 91, 0.08); }
+.qz-option input { margin-top: 4px; accent-color: #3d6b3d; }
+.qz-verdict { margin-top: 16px; padding: 14px 16px; border-radius: 12px; border: 1.5px dashed; }
+.qz-verdict.ok { border-color: #4a9a4a; background: rgba(74, 154, 74, 0.06); }
+.qz-verdict.bad { border-color: #c25b5b; background: rgba(194, 91, 91, 0.05); }
+.qz-verdict.ai { border-color: #8a6d1a; background: rgba(201, 162, 39, 0.06); }
+.qz-verdict-title { font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.qz-verdict-title.ok { color: #2f7d2f; }
+.qz-verdict-title.bad { color: #a84040; }
+.qz-verdict-text { font-family: inherit; font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; margin: 0; color: var(--ink, #2c2c2c); }
+.qz-analysis { margin-top: 10px; background: rgba(255, 255, 255, 0.75); border-radius: 10px; padding: 10px 14px; }
+.qz-analysis-head { font-size: 13px; font-weight: 700; color: #3d6b3d; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+.qz-analysis-body { font-size: 13.5px; line-height: 1.85; color: #444; white-space: pre-wrap; }
+.qz-timer {
+  display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-variant-numeric: tabular-nums;
+  padding: 5px 14px; border-radius: 99px; background: rgba(61, 107, 61, 0.1); color: #3d6b3d; font-size: 15px;
 }
-@media (prefers-reduced-motion: reduce) { .quiz-opt:hover { transform: none; } }
+.qz-timer.urgent { background: rgba(194, 91, 91, 0.12); color: #a84040; animation: qz-pulse 1s infinite; }
+@keyframes qz-pulse { 50% { opacity: 0.6; } }
+.qz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 7px; }
+.qz-cell {
+  height: 38px; border-radius: 9px; border: 1px solid var(--line, #e5e0d4); background: #fff;
+  font-size: 13px; font-weight: 600; cursor: pointer; color: #666; position: relative;
+}
+.qz-cell.done { background: rgba(90, 143, 90, 0.14); color: #3d6b3d; border-color: rgba(90, 143, 90, 0.4); }
+.qz-cell.right { background: rgba(74, 154, 74, 0.25); color: #1f5c1f; }
+.qz-cell.wrong { background: rgba(194, 91, 91, 0.2); color: #8f2f2f; }
+.qz-cell.subj::after { content: 'AI'; position: absolute; top: -5px; right: -4px; font-size: 9px; background: #c9a227; color: #fff; border-radius: 99px; padding: 0 4px; }
+.qz-cell.cur { outline: 2px solid #3d6b3d; outline-offset: 1px; }
+.qz-legend { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.qz-legend.ok { background: rgba(74, 154, 74, 0.5); }
+.qz-legend.bad { background: rgba(194, 91, 91, 0.45); }
+.qz-legend.done { background: rgba(90, 143, 90, 0.25); }
+.qz-legend.subj { background: #c9a227; }
+.qz-report { margin-top: 16px; padding: 14px; border-radius: 12px; background: rgba(61, 107, 61, 0.08); text-align: center; }
+.qz-report-score { font-size: 34px; font-weight: 800; color: #3d6b3d; }
+.qz-report-score span { font-size: 14px; font-weight: 600; }
 </style>

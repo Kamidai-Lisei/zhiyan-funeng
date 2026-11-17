@@ -168,6 +168,83 @@ public class ResumeController {
         return ResultUtils.success(analysis);
     }
 
+    /**
+     * 与 AI 对话修改简历：返回建议；若 AI 给出修改后的简历 JSON 则同步落库
+     * 请求体：{resumeId, message, history:[{role, content}]}
+     */
+    @PostMapping("/chat")
+    public BaseResponse<Map<String, Object>> chat(@RequestBody Map<String, Object> body,
+                                                  HttpServletRequest request) {
+        User user = userService.getLoginUser(request);
+        Long resumeId = body.get("resumeId") == null ? null
+                : Long.valueOf(String.valueOf(body.get("resumeId")));
+        String message = StringUtils.trimToEmpty(String.valueOf(body.getOrDefault("message", "")));
+        ThrowUtils.throwIf(resumeId == null || StringUtils.isEmpty(message),
+                ErrorCode.PARAMS_ERROR, "缺少简历或修改意见");
+        Resume resume = resumeMapper.selectById(resumeId);
+        ThrowUtils.throwIf(resume == null || !resume.getUserId().equals(user.getId()),
+                ErrorCode.NO_AUTH_ERROR, "无权修改该简历");
+
+        StringBuilder conv = new StringBuilder();
+        Object rawHistory = body.get("history");
+        if (rawHistory instanceof List) {
+            int count = 0;
+            for (Object o : (List<?>) rawHistory) {
+                if (o instanceof Map && count < 10) {
+                    String role = StringUtils.trimToEmpty(String.valueOf(((Map<?, ?>) o).get("role")));
+                    String content = StringUtils.trimToEmpty(String.valueOf(((Map<?, ?>) o).get("content")));
+                    if (StringUtils.isNotBlank(content)) {
+                        conv.append(role.contains("assistant") || role.contains("ai") ? "AI：" : "用户：")
+                                .append(content.length() > 500 ? content.substring(0, 500) : content)
+                                .append('\n');
+                        count++;
+                    }
+                }
+            }
+        }
+        String content = StringUtils.defaultString(resume.getContent(), "{}");
+        if (content.length() > 5000) {
+            content = content.substring(0, 5000);
+        }
+        String prompt = "当前简历内容（JSON，字段含 basic/experience/projects/skills 等）：\n" + content +
+                (conv.length() > 0 ? "\n\n最近的对话记录：\n" + conv : "") +
+                "\n用户这次的修改意见：" + message + "\n\n" +
+                "请完成两件事：\n" +
+                "1. 用简洁的 markdown（可用列表）给出针对该简历的具体修改建议与面试/求职指导；\n" +
+                "2. 如果意见涉及修改简历内容本身，请输出修改后的完整简历 JSON，放在如下标记中：\n" +
+                "```resume-json\n{...完整的简历 JSON...}\n```\n" +
+                "若无需改动简历内容，则不要输出该标记。保持 JSON 字段结构与原简历一致。";
+        String reply;
+        try {
+            reply = deepSeekApi.sendDeepseekChat(
+                    "你是资深的计算机考研复试与互联网求职简历顾问，擅长通过对话式辅导帮学生打磨简历，回答具体、可执行。",
+                    prompt);
+        } catch (Exception e) {
+            log.warn("AI 简历对话失败", e);
+            reply = "AI 服务暂时不可用，请稍后重试。也可以参考通用建议：项目经历补充量化指标、技能按熟练度排序、突出与目标岗位匹配的关键词。";
+        }
+        ThrowUtils.throwIf(StringUtils.isBlank(reply), ErrorCode.SYSTEM_ERROR, "AI 未返回内容");
+
+        // 提取修改后的简历 JSON（若存在）
+        Map<String, Object> data = new HashMap<>();
+        data.put("reply", reply);
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("```resume-json\\s*([\\s\\S]*?)```").matcher(reply);
+        if (m.find()) {
+            try {
+                String json = m.group(1).trim();
+                new com.google.gson.JsonParser().parse(json);
+                resume.setContent(json);
+                resumeMapper.updateById(resume);
+                data.put("resumeJson", json);
+                data.put("applied", true);
+            } catch (Exception e) {
+                log.warn("AI 返回的简历 JSON 解析失败", e);
+            }
+        }
+        return ResultUtils.success(data);
+    }
+
     private int parseScore(String text) {
         if (StringUtils.isBlank(text)) {
             return 0;

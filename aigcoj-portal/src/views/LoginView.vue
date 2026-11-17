@@ -13,8 +13,8 @@ const loading = ref(false)
 const form = reactive({ userAccount: '', userPassword: '' })
 
 const demos = [
-  { label: '管理员', account: 'jayjay', password: 'kaoyan2026' },
-  { label: '普通用户', account: 'aiaiai', password: 'kaoyan2026' },
+  { label: '管理员', account: 'admin', password: 'admin123456' },
+  { label: '普通用户', account: 'jayjay', password: 'kaoyan123456' },
 ]
 
 const days = computed(() => Math.max(0, Math.ceil((new Date('2026-12-19').getTime() - Date.now()) / 86400000)))
@@ -28,7 +28,8 @@ async function submit() {
   try {
     await auth.login(form.userAccount.trim(), form.userPassword)
     Message.success(`欢迎回来，${auth.displayName}`)
-    const redirect = (route.query.redirect as string) || '/'
+    // 管理员登录后直接进入后台管理面板
+    const redirect = (route.query.redirect as string) || (auth.isAdmin ? '/admin' : '/')
     router.replace(redirect)
   } catch (e: any) {
     Message.error(e?.message || '登录失败')

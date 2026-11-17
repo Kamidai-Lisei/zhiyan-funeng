@@ -94,6 +94,26 @@ function openEdit() {
   editOpen.value = true
 }
 
+const avatarUploading = ref(false)
+
+/** 点击上传本地图片作为头像 */
+async function onAvatarFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) return Message.warning('头像图片不能超过 5MB')
+  avatarUploading.value = true
+  try {
+    const res = await materialApi.upload(file, 'avatar')
+    profileForm.userAvatar = res.url
+    Message.success('头像上传成功，点击保存生效')
+  } catch (err: any) {
+    Message.error(err?.message || '上传失败')
+  } finally {
+    avatarUploading.value = false
+    ;(e.target as HTMLInputElement).value = ''
+  }
+}
+
 async function saveProfile() {
   saving.value = true
   try {
@@ -145,7 +165,10 @@ onMounted(load)
 <template>
   <div class="page container">
     <section class="card profile-hero">
-      <div class="avatar">{{ auth.initial }}</div>
+      <div class="avatar">
+        <img v-if="auth.user?.userAvatar" :src="auth.user.userAvatar" alt="我的头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 999px" />
+        <template v-else>{{ auth.initial }}</template>
+      </div>
       <div class="who">
         <div class="name-row">
           <h1>{{ auth.displayName }}</h1>
@@ -287,8 +310,15 @@ onMounted(load)
         <a-input v-model="profileForm.userName" placeholder="展示在论坛与排行榜" />
         <label>个性签名</label>
         <a-textarea v-model="profileForm.userProfile" :auto-size="{ minRows: 3 }" placeholder="一句话介绍自己" />
-        <label>头像地址</label>
-        <a-input v-model="profileForm.userAvatar" placeholder="https://…（选填）" />
+        <label>头像</label>
+        <div class="avatar-editor">
+          <img v-if="profileForm.userAvatar" :src="profileForm.userAvatar" alt="头像预览" class="avatar-preview" />
+          <div v-else class="avatar-preview placeholder">{{ auth.initial }}</div>
+          <label class="avatar-upload-btn" :class="{ uploading: avatarUploading }">
+            <input type="file" accept="image/png,image/jpeg,image/webp" style="display: none" @change="onAvatarFile" :disabled="avatarUploading" />
+            {{ avatarUploading ? '上传中…' : '点击上传本地头像' }}
+          </label>
+        </div>
         <a-button long type="primary" :loading="saving" @click="saveProfile">保存</a-button>
       </div>
     </a-modal>
@@ -317,7 +347,20 @@ onMounted(load)
   display: grid; place-items: center; font-size: 26px; font-weight: 600; color: #fffdf8;
   background: linear-gradient(150deg, var(--meadow), #7fae7c);
   box-shadow: 0 10px 24px rgba(90, 143, 90, 0.28);
+  overflow: hidden;
 }
+.avatar-editor { display: flex; align-items: center; gap: 14px; }
+.avatar-preview {
+  width: 64px; height: 64px; border-radius: 999px; object-fit: cover;
+  background: linear-gradient(150deg, var(--meadow), #7fae7c);
+  display: grid; place-items: center; color: #fff; font-size: 22px; font-weight: 600; flex: none;
+}
+.avatar-upload-btn {
+  padding: 9px 16px; border-radius: 10px; border: 1.5px dashed rgba(139, 115, 85, 0.35);
+  cursor: pointer; font-size: 13px; color: var(--muted); background: #fdfaf4; transition: 0.15s;
+}
+.avatar-upload-btn:hover { border-color: #b3d0af; color: var(--brand); }
+.avatar-upload-btn.uploading { opacity: 0.6; pointer-events: none; }
 .who { flex: 1; min-width: 220px; }
 .name-row { display: flex; align-items: center; gap: 10px; }
 .name-row h1 { margin: 0; font-size: 22px; color: var(--ink); letter-spacing: -0.4px; }

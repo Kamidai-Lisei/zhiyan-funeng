@@ -35,6 +35,11 @@ public class Question implements Serializable {
     private String tags;
 
     /**
+     * algo 算法竞赛真题 / machine 考研上机真题 / interview 面试真题
+     */
+    private String category;
+
+    /**
      * 题目答案
      */
     private String answer;

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { forumApi } from '../api/forum'
 import { statsApi } from '../api/stats'
+import { friendApi } from '../api/friend'
 import { errorMessage } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 import { fromNow, plainText, toTags } from '../utils/format'
@@ -22,6 +23,29 @@ const sort = ref('new')
 const keyword = ref('')
 const tag = ref('')
 const ranking = ref<any[]>([])
+const friendIds = ref<number[]>([])
+
+const loadFriends = async () => {
+  if (!auth.isAuthed) return
+  try {
+    friendIds.value = ((await friendApi.list()) as any[]).map((f) => Number(f.id))
+  } catch {}
+}
+
+/** 给研友发好友申请（或直接进入聊天） */
+const addFriend = async (u: any, e?: Event) => {
+  e?.stopPropagation()
+  if (!auth.isAuthed) return Message.info('登录后可以添加研友')
+  const uid = Number(u.id)
+  if (uid === Number(auth.user?.id)) return
+  if (friendIds.value.includes(uid)) return router.push(`/chat?with=${uid}`)
+  try {
+    await friendApi.request(uid)
+    Message.success('好友申请已发送，等待对方确认')
+  } catch (err: any) {
+    Message.error(errorMessage(err))
+  }
+}
 
 const tabs = [
   { id: 'new', label: '最新发布', field: 'createTime' },
@@ -65,6 +89,7 @@ const changeTag = (t: string) => {
 
 onMounted(async () => {
   load()
+  loadFriends()
   try { ranking.value = await statsApi.ranking() } catch {}
 })
 </script>
@@ -80,6 +105,9 @@ onMounted(async () => {
         </div>
         <a-button type="primary" size="large" @click="router.push(auth.isAuthed ? '/forum/new' : '/login')">
           <Icon name="edit" :size="15" /> 发布帖子
+        </a-button>
+        <a-button size="large" @click="router.push(auth.isAuthed ? '/chat' : '/login')">
+          <Icon name="chat" :size="15" /> 私信聊天
         </a-button>
       </div>
 
@@ -115,6 +143,13 @@ onMounted(async () => {
                     <span><Icon name="heart" :size="12" /> {{ p.thumbNum || 0 }}</span>
                     <span><Icon name="star" :size="12" /> {{ p.favourNum || 0 }}</span>
                     <span v-for="t in (p.tagList || toTags(p.tags)).slice(0, 2)" :key="t" class="tag">#{{ t }}</span>
+                    <span
+                      v-if="auth.isAuthed && p.user && Number(p.user.id) !== Number(auth.user?.id)"
+                      class="friend-btn"
+                      @click.stop="addFriend(p.user, $event)"
+                    >
+                      <Icon name="plus" :size="12" /> {{ friendIds.includes(Number(p.user.id)) ? '私信' : '加好友' }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -143,7 +178,12 @@ onMounted(async () => {
                 <div class="avatar sm">{{ (u.userName || '研').slice(0, 1) }}</div>
                 <span class="small">{{ u.userName || u.userAccount }}</span>
               </div>
-              <span class="small muted">{{ u.acCount || 0 }} AC</span>
+              <div class="row gap8">
+                <span class="small muted">{{ u.acCount || 0 }} AC</span>
+                <span class="friend-btn" @click="addFriend(u, $event)">
+                  {{ Number(u.id) === Number(auth.user?.id) ? '我' : friendIds.includes(Number(u.id)) ? '私信' : '+好友' }}
+                </span>
+              </div>
             </div>
           </div>
           <div class="card card-pad">
@@ -162,6 +202,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.friend-btn {
+  display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 99px;
+  background: rgba(90, 143, 90, 0.1); color: #3d6b3d; font-size: 12px; cursor: pointer; transition: 0.12s;
+}
+.friend-btn:hover { background: rgba(90, 143, 90, 0.2); }
 @media (max-width: 1024px) {
   .grid[style*="300px"] { grid-template-columns: 1fr !important; }
   aside { position: static !important; }

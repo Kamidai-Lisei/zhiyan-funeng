@@ -26,6 +26,7 @@ export const router = createRouter({
         { path: 'forum/new', name: 'post-new', component: () => import('../views/PostEditorView.vue'), meta: { title: '发布帖子', requiresAuth: true } },
         { path: 'forum/:id', name: 'post-detail', component: () => import('../views/PostDetailView.vue'), meta: { title: '帖子详情' } },
         { path: 'forum/:id/edit', name: 'post-edit', component: () => import('../views/PostEditorView.vue'), meta: { title: '编辑帖子', requiresAuth: true } },
+        { path: 'chat', name: 'chat', component: () => import('../views/ChatView.vue'), meta: { title: '好友私信', requiresAuth: true } },
 
         { path: 'career', name: 'career', component: () => import('../views/CareerView.vue'), meta: { title: '就业与复试' } },
         { path: 'career/resume', name: 'resume', component: () => import('../views/ResumeBuilderView.vue'), meta: { title: '简历工坊', requiresAuth: true } },

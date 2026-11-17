@@ -223,6 +223,12 @@ const resetCode = () => {
 onMounted(load)
 </script>
 
+<style scoped>
+/* 答题页使用更宽的容器，左右对称、满屏利用 */
+.page :deep(.container),
+.container { max-width: 1560px; }
+</style>
+
 <template>
   <div class="page" style="padding-top: 20px">
     <div class="container">
