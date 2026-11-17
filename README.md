@@ -109,11 +109,11 @@ Vite 已配置代理：`/api/* → http://localhost:8121`，Session Cookie 同�
 | 学习规划 | `/plan` | 基于画像与目标日期生成基础/强化/冲刺/复试全周期规划，历史版本留档 |
 | 题库 | `/problems` | 全编程题（28 道，对标蓝桥题库）：科目/难度/关键词筛选、通过率、我的 AC 状态、收藏、分页 |
 | 在线做题 | `/problems/:id` | Monaco 编辑器（Java / C++ / Python）、多语言草稿本地保存、提交轮询判题、**按测试用例计分（得分 + 通过用例数 + 失败用例详情）**、AI 代码点评、题目讨论区、我的提交 |
-| 408 在线习题 | `/learn/quiz` | 四科章节练习 + 往年真题（选择题）：在线作答即时判分、逐题解析、按科目统计正确率 |
+| 408 在线习题 | `/learn/quiz` | 四科章节练习 + 按大纲命制的模拟卷（非原题，已在卷名与来源标注）：在线作答即时判分、大题 AI 评阅、逐题解析、整卷限时模考 |
 | 我的提交 | `/submissions` | 语言/状态筛选、代码查看弹窗 |
 | 错题本 | `/wrong-book` | 未通过题目自动归集、收藏、重新挑战 |
 | 408 学习 | `/learn/408` | 四科 14 章结构化笔记（Markdown）、阅读进度、章节完成标记、上/下一篇 |
-| 资料库 | `/materials` | 资源价值引擎：登录后按画像薄弱点计算每份资料的适配度并智能排序；分类侧栏、最新/最热/收藏排序、PDF 在线预览、收藏与下载、管理员上传 |
+| 资料库 | `/materials` | **真题原卷库**：408 2009–2026（含答案）、数学一 1987–2022、英语一 2002–2022、政治 2014–2024，全部本地 PDF 在线浏览 + 下载；另有分类侧栏、年份标签、最新/最热/收藏排序、资源价值引擎智能排序、管理员上传 |
 | 论坛 | `/forum` | 最新/热门/精华、标签筛选、Markdown 发帖与预览、点赞收藏、评论、相关推荐、活跃榜 |
 | 就业与复试 | `/career` | 复试时间线、简历评分卡、求职方向、面试高频题折叠面板、复试经验帖 |
 | 简历工坊 | `/career/resume` | 结构化编辑 + 实时纸张预览、三套模板、AI 诊断（评分 + 亮点/问题/改写建议）、打印导出 PDF |
@@ -164,11 +164,35 @@ Vite 已配置代理：`/api/* → http://localhost:8121`，Session Cookie 同�
 
 ---
 
-## 五、内置资料
+## 五、真题资料（全部为原卷 PDF）
 
-`aigcoj-backend/data/uploads/material/` 下由 `scripts/gen_materials.py`（ReportLab + SimHei，CJK 自动换行）生成 9 份 PDF，配合 `seed_content.sql` 的 13 条资料记录，可直接在线预览：
+资料库共 **135 份本地 PDF**，全部可在线浏览与下载，`sql/rebuild_materials.sql` 由 `scripts/rebuild_materials.py` 按磁盘实际文件生成（不存在的文件不会登记，避免死链）。
 
-408 数据结构核心考点手册、计算机组成原理（Cache 与存储体系）、操作系统（进程/内存/文件）、计算机网络（TCP/IP 高频考点）、408 历年真题分类汇编、考研数学一公式速查、考研英语高频词汇精选、考研政治冲刺背诵提纲、计算机复试面试 200 问。
+| 分类 | 覆盖年份 | 份数 | 来源 |
+| --- | --- | --- | --- |
+| 408 真题 | 2009–2026 | 18 | [neville-studio/408-exam-paper](https://github.com/neville-studio/408-exam-paper)（依据原卷重排，A4 可直接打印） |
+| 408 真题答案 | 2009–2026 | 18 | 同上仓库 `answers/`（逐题解析） |
+| 数学一真题 | 1987–2022 | 36 | **本地真题原卷**（`我的文件/考研11408/.../01. 数一（1998-2022年）真题`） |
+| 英语一真题 | 2002–2022 | 21 | [youngflysky/KaoYanZhenTi-PDF](https://github.com/youngflysky/KaoYanZhenTi-PDF) |
+| 政治真题 | 2014–2024 | 11 | 郑州工商学院马克思主义学院公开真题附件 |
+| 408 仿真模拟卷 | 8 套 | 8 | 本项目按 408 题型结构命制（**非真题**，标题已注明） |
+| 408 习题 / 大纲 / 讲义 | — | 9 | 本项目整理 |
+| 复习方法论 / 公共课资料 / 复试 | — | 14 | 本项目整理 |
+
+> **关于真实性**：`data/uploads/material/` 曾被 `scripts/gen_materials_pdfs.py` 生成过一批"仿制试卷"（文件名 `zhenti-*/math-*/english-*/politics-*`），内容为按考点编写的题目，**并非历年原题**，已全部移除。现在库中每一份真题的文件字节数都与来源站元数据一致，可自行核对，例如 `zt408-2009.pdf` = 819058 字节、`math1-1987.pdf` = 1151765 字节。
+
+> **在线题库说明**：`/learn/quiz` 中的 8 套卷（`paper` 形如 `2012 模拟卷·AI 命制`）是按考试大纲考点编写的练习卷，`source` 字段已明确标注"按大纲命制，非原题"；历年真题原卷请到资料库查看 PDF。
+
+### 资料文件如何恢复
+
+`data/` 目录被 `.gitignore` 排除（PDF 体积大），换机器后重新拉取：
+
+```bash
+python scripts/rebuild_materials.py                      # 扫描磁盘，生成 sql/rebuild_materials.sql
+mysql -uroot -p123456 --default-character-set=utf8mb4 aigcoj_pro1 < aigcoj-backend/sql/rebuild_materials.sql
+```
+
+PDF 本体按上表来源下载到 `aigcoj-backend/data/uploads/material/`，命名规则：`zt408-{年份}.pdf`、`zt408-{年份}-ans.pdf`、`math1-{年份}.pdf`、`en1-{年份}.pdf`、`zz-{年份}.pdf`。
 
 ---
 

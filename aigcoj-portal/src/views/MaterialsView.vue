@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { materialApi } from '../api/material'
 import { studyApi } from '../api/study'
@@ -10,6 +11,7 @@ import Icon from '../components/Icon.vue'
 import EmptyState from '../components/EmptyState.vue'
 
 const auth = useAuthStore()
+const route = useRoute()
 
 const loading = ref(true)
 const rows = ref<any[]>([])
@@ -28,8 +30,9 @@ const catGroups = [
   {
     label: '408 专业课',
     items: [
-      { id: '408 真题', label: '历年真题' },
-      { id: '408 模拟题', label: '模拟题' },
+      { id: '408 真题', label: '历年真题原卷' },
+      { id: '408 真题答案', label: '真题答案与解析' },
+      { id: '408 模拟题', label: '仿真模拟卷' },
       { id: '408 习题', label: '教材配套习题' },
       { id: '408 大纲', label: '考试大纲' },
       { id: '408', label: '讲义与笔记' },
@@ -38,17 +41,15 @@ const catGroups = [
   {
     label: '公共课真题',
     items: [
-      { id: '数学真题', label: '数学真题' },
-      { id: '英语真题', label: '英语真题' },
+      { id: '数学一真题', label: '数学一真题' },
+      { id: '英语一真题', label: '英语一真题' },
       { id: '政治真题', label: '政治真题' },
     ],
   },
   {
     label: '公共课资料',
     items: [
-      { id: '数学', label: '数学' },
-      { id: '英语', label: '英语' },
-      { id: '政治', label: '政治' },
+      { id: '公共课资料', label: '词汇与公式' },
     ],
   },
   {
@@ -59,12 +60,23 @@ const catGroups = [
     ],
   },
 ]
-const isRealPaper = computed(() => ['408 真题', '408 模拟题', '数学真题', '英语真题', '政治真题'].includes(category.value))
+const isRealPaper = computed(() => ['408 真题', '408 真题答案', '408 模拟题', '数学一真题', '英语一真题', '政治真题'].includes(category.value))
 const flatCats = catGroups.flatMap((g) => g.items)
+/** 各科目真实收录年份区间（对应资料库中实际存在的原卷） */
+const yearRange: Record<string, [number, number]> = {
+  '408 真题': [2009, 2026],
+  '408 真题答案': [2009, 2026],
+  '数学一真题': [1987, 2022],
+  '英语一真题': [2002, 2022],
+  '政治真题': [2014, 2024],
+}
 const years = computed(() => {
-  if (!isRealPaper.value) return []
   if (category.value === '408 模拟题') return ['1', '2', '3', '4', '5', '6', '7', '8']
-  return Array.from({ length: 18 }, (_, i) => String(2026 - i))
+  const r = yearRange[category.value]
+  if (!r) return []
+  const out: string[] = []
+  for (let y = r[1]; y >= r[0]; y--) out.push(String(y))
+  return out
 })
 const pickYear = (y: string) => {
   keyword.value = y
@@ -256,7 +268,11 @@ const saveMaterial = async () => {
 
 const catCount = (id: string) => categories.value.find((c) => c.name === id)?.count || 0
 
-onMounted(() => { load(); loadMeta() })
+onMounted(() => {
+  const q = route.query.cat
+  if (q && typeof q === 'string' && flatCats.some((c) => c.id === q)) category.value = q
+  load(); loadMeta()
+})
 </script>
 
 <template>

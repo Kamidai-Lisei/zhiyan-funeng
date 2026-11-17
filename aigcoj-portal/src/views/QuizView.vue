@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { quizApi, type QuizQuestion, type QuizPaper, type SingleResult } from '@/api/quiz'
 import { errorMessage } from '@/api/http'
@@ -8,6 +9,7 @@ import Icon from '@/components/Icon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const SUBJECTS = [
   { id: '', label: '全部科目' },
@@ -65,6 +67,14 @@ const loadStats = async () => {
 const realPapers = computed(() => papers.value.filter((p) => p.kind === '真题'))
 const mockPapers = computed(() => papers.value.filter((p) => p.kind === '模拟'))
 const chapterPapers = computed(() => papers.value.filter((p) => p.kind === '章节'))
+/** 只渲染有内容的卷组，避免出现空板块 */
+const paperGroups = computed(() =>
+  [
+    { title: '历年真题卷', icon: 'file', list: realPapers.value, tint: 'green' },
+    { title: '全真模拟卷', icon: 'sparkles', list: mockPapers.value, tint: 'amber' },
+    { title: '章节精练', icon: 'book', list: chapterPapers.value, tint: 'blue' },
+  ].filter((g) => g.list.length > 0),
+)
 
 const openPaper = async (p: QuizPaper, asExam: boolean) => {
   loading.value = true
@@ -183,7 +193,7 @@ onUnmounted(stopTimer)
             <div class="kicker">408 Practice</div>
             <h1 class="h1" style="margin-top: 6px">408 在线刷题</h1>
             <p class="muted" style="margin-top: 6px">
-              历年真题 · 全真模拟 · 章节精练：逐题作答即时判分，大题由 AI 逐句评阅；支持 180 分钟整卷限时模拟。
+              逐题练习即时判分、大题 AI 逐句评阅；以下卷组为按 408 大纲考点命制的练习卷，历年真题原卷（2009–2026）请到资料库查看原版 PDF。
             </p>
           </div>
           <div class="card card-pad" v-if="stats" style="min-width: 240px">
@@ -197,11 +207,22 @@ onUnmounted(stopTimer)
           </div>
         </div>
 
-        <div class="qz-group" v-for="(group, gi) in [
-            { title: '历年真题卷', icon: 'file', list: realPapers, tint: 'green' },
-            { title: '全真模拟卷', icon: 'sparkles', list: mockPapers, tint: 'amber' },
-            { title: '章节精练', icon: 'book', list: chapterPapers, tint: 'blue' },
-          ]" :key="gi">
+        <div class="card card-pad real-paper-banner">
+          <div class="row gap12" style="align-items: flex-start">
+            <div class="banner-icon"><Icon name="file" :size="18" /></div>
+            <div style="flex: 1">
+              <div class="h4">历年真题原卷 · 2009–2026 共 18 套</div>
+              <div class="small muted" style="margin-top: 4px">
+                资料库收录每年真题原卷 + 独立答案与解析 PDF，支持在线浏览与下载打印，适合整卷限时模考。
+              </div>
+            </div>
+            <a-button type="primary" @click="router.push('/materials?cat=408%20%E7%9C%9F%E9%A2%98')">
+              去资料库查看 <Icon name="arrow-right" :size="14" />
+            </a-button>
+          </div>
+        </div>
+
+        <div class="qz-group" v-for="(group, gi) in paperGroups" :key="gi">
           <div class="qz-group-head">
             <Icon :name="group.icon" :size="17" />
             <span class="h3">{{ group.title }}</span>
@@ -368,6 +389,8 @@ onUnmounted(stopTimer)
 
 <style scoped>
 .quiz-page { max-width: 1280px; }
+.real-paper-banner { margin-bottom: 20px; border: 1px dashed rgba(90,143,90,.35); background: linear-gradient(120deg,#f6faf1,#fdfaf1); }
+.banner-icon { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: rgba(90,143,90,.14); color: #3d6b3d; flex: none; }
 .qz-group { margin-bottom: 22px; }
 .qz-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--brand, #3d6b3d); }
 .qz-papers { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
